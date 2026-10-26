@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Visual Eyes Her — Transcendent Audio-Visual Dreamscape</title>
+    <meta name="description" content="A continuously evolving, audio-reactive non-Euclidean dreamscape visualizer." />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <canvas id="glcanvas" class="glcanvas"></canvas>
+
+    <!-- UI overlay -->
+    <div class="ui" id="ui">
+      <div class="panel" id="panel">
+        <div class="header">
+          <h1>VISUAL <span class="accent">EYES</span> HER</h1>
+          <div class="badge" id="mode-badge">SELF-GENERATING</div>
+        </div>
+
+        <div class="controls">
+          <div class="control-group">
+            <label>Mode</label>
+            <div class="segmented">
+              <button type="button" data-mode="off" class="seg active">Self-Generating</button>
+              <button type="button" data-mode="mic" class="seg">Microphone</button>
+              <button type="button" data-mode="file" class="seg">Audio File</button>
+            </div>
+          </div>
+
+          <div class="control-group file-group" id="file-group" style="display:none">
+            <label>Audio File</label>
+            <input type="file" id="audio-file" accept="audio/*" />
+          </div>
+
+          <div class="control-group mic-group" id="mic-group" style="display:none">
+            <label>Microphone</label>
+            <button type="button" id="mic-toggle" class="seg">Start Microphone</button>
+          </div>
+
+          <div class="control-group">
+            <label>Intensity</label>
+            <input type="range" id="intensity" min="0" max="2" step="0.1" value="1" />
+          </div>
+
+          <div class="control-group">
+            <label>Pulse Speed</label>
+            <input type="range" id="pulse-speed" min="0.1" max="3" step="0.1" value="1" />
+          </div>
+        </div>
+
+        <div class="hint">
+          Audio maps to visuals:<br />
+          <span class="hint-line">Bass → slow volumetric breathing &amp; ground ripple</span><br />
+          <span class="hint-line">Mids → particle swarms &amp; color shifts</span><br />
+          <span class="hint-line">Highs → sparkle blooms &amp; edge wisps</span><br />
+          <span class="hint-line">Onset → flash-morphs &amp; radial expansion</span>
+        </div>
+
+        <div class="footer">
+          <div class="status" id="status">No audio — internal pulse engine active</div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>
