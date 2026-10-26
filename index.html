@@ -3,64 +3,401 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Visual Eyes Her — Transcendent Audio-Visual Dreamscape</title>
-    <meta name="description" content="A continuously evolving, audio-reactive non-Euclidean dreamscape visualizer." />
+    <title>Visual Eyes Her — Adaptive Generative Dreamscape</title>
+    <meta
+      name="description"
+      content="An adaptive, audio-reactive generative visual experience across ten sculptural aesthetic families."
+    />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <canvas id="glcanvas" class="glcanvas"></canvas>
+    <canvas id="glcanvas" class="glcanvas" aria-label="Generative 3D visual experience"></canvas>
 
-    <!-- UI overlay -->
-    <div class="ui" id="ui">
-      <div class="panel" id="panel">
-        <div class="header">
-          <h1>VISUAL <span class="accent">EYES</span> HER</h1>
-          <div class="badge" id="mode-badge">SELF-GENERATING</div>
+    <!-- Hidden file input for local audio tracks -->
+    <input type="file" id="audio-file-input" accept="audio/*" hidden />
+
+    <!-- Subtle corner hover button when UI is hidden -->
+    <button
+      type="button"
+      id="show-ui-corner"
+      class="show-ui-corner"
+      title="Show Controls (H)"
+      aria-label="Show Controls"
+    >
+      Show UI · H
+    </button>
+
+    <!-- Ephemeral toast notification -->
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <!-- Main HUD Overlay -->
+    <div id="hud" class="hud">
+      <!-- Top Floating Telemetry & Navigation Bar -->
+      <header class="topbar">
+        <div class="glass-pill brand-pill">
+          <div class="brand-mark">
+            <span class="brand-dot"></span>
+            <span class="brand-title">VISUAL <em>EYES</em> HER</span>
+          </div>
+          <span class="sep"></span>
+          <span id="audio-mode-badge" class="mode-badge">SELF PULSE</span>
         </div>
 
-        <div class="controls">
-          <div class="control-group">
-            <label>Mode</label>
-            <div class="segmented">
-              <button type="button" data-mode="off" class="seg active">Self-Generating</button>
-              <button type="button" data-mode="mic" class="seg">Microphone</button>
-              <button type="button" data-mode="file" class="seg">Audio File</button>
+        <button
+          type="button"
+          id="director-pill"
+          class="glass-pill director-pill"
+          title="Click to inspect Scene Composer (D)"
+        >
+          <span id="arc-phase-badge" class="arc-badge">INTRODUCE</span>
+          <span id="director-live-text" class="director-text">
+            Introducing Celestial Orbital · Cosmic Transcendence
+          </span>
+          <span class="arc-bar-wrap" aria-hidden="true">
+            <span id="arc-progress-bar" class="arc-bar"></span>
+          </span>
+        </button>
+
+        <div class="glass-pill system-pill">
+          <span id="perf-badge" class="perf-badge" title="Live frame rate & adaptive quality">
+            60 FPS · High
+          </span>
+          <button
+            type="button"
+            id="toggle-drawer-btn"
+            class="pill-action"
+            aria-expanded="false"
+            title="Open Studio Controls (D)"
+          >
+            Studio <kbd>D</kbd>
+          </button>
+          <button
+            type="button"
+            id="hide-ui-btn"
+            class="pill-action subtle"
+            title="Hide UI for Pure Immersion (H)"
+          >
+            Hide <kbd>H</kbd>
+          </button>
+        </div>
+      </header>
+
+      <!-- Collapsible Right Studio Inspector Drawer -->
+      <aside id="studio-drawer" class="studio-drawer" aria-label="Studio Controls">
+        <div class="drawer-tabs" role="tablist">
+          <button type="button" class="tab-btn active" data-tab="compose" role="tab">Compose</button>
+          <button type="button" class="tab-btn" data-tab="tune" role="tab">Tune</button>
+          <button type="button" class="tab-btn" data-tab="personal" role="tab">Personal</button>
+          <button type="button" class="tab-btn" data-tab="system" role="tab">Access &amp; Perf</button>
+        </div>
+
+        <!-- TAB 1: COMPOSE & AUDIO -->
+        <section class="tab-panel active" data-panel="compose">
+          <div class="section-block">
+            <div class="section-head">
+              <span>Automation Level</span>
+              <span class="hint-tag">1 – 4</span>
+            </div>
+            <div class="seg-row" id="automation-seg">
+              <button type="button" class="seg-btn" data-auto="manual">Manual</button>
+              <button type="button" class="seg-btn" data-auto="guided">Guided</button>
+              <button type="button" class="seg-btn active" data-auto="adaptive">Adaptive</button>
+              <button type="button" class="seg-btn" data-auto="autonomous">Autonomous</button>
             </div>
           </div>
 
-          <div class="control-group file-group" id="file-group" style="display:none">
-            <label>Audio File</label>
-            <input type="file" id="audio-file" accept="audio/*" />
+          <div class="section-block">
+            <div class="section-head">
+              <span>Instant Override &amp; Lock</span>
+              <span class="hint-tag">Click pin to lock</span>
+            </div>
+
+            <div class="override-row">
+              <label for="select-family">Focal Family</label>
+              <div class="override-controls">
+                <select id="select-family" class="glass-select"></select>
+                <button type="button" class="lock-btn" data-lock="family" title="Lock Focal Family">🔓</button>
+              </div>
+            </div>
+
+            <div class="override-row">
+              <label for="select-palette">Color Palette</label>
+              <div class="override-controls">
+                <select id="select-palette" class="glass-select"></select>
+                <button type="button" class="lock-btn" data-lock="palette" title="Lock Palette">🔓</button>
+              </div>
+            </div>
+
+            <div class="override-row">
+              <label for="select-motion">Motion Style</label>
+              <div class="override-controls">
+                <select id="select-motion" class="glass-select"></select>
+                <button type="button" class="lock-btn" data-lock="motionStyle" title="Lock Motion Style">🔓</button>
+              </div>
+            </div>
+
+            <div class="override-row">
+              <label for="select-particles">Particles</label>
+              <div class="override-controls">
+                <select id="select-particles" class="glass-select"></select>
+                <button type="button" class="lock-btn" data-lock="particleBehavior" title="Lock Particles">🔓</button>
+              </div>
+            </div>
           </div>
 
-          <div class="control-group mic-group" id="mic-group" style="display:none">
-            <label>Microphone</label>
-            <button type="button" id="mic-toggle" class="seg">Start Microphone</button>
+          <div class="section-block">
+            <div class="section-head">
+              <span>Director Activity Log</span>
+            </div>
+            <ul id="director-log" class="director-log"></ul>
           </div>
 
-          <div class="control-group">
-            <label>Intensity</label>
-            <input type="range" id="intensity" min="0" max="2" step="0.1" value="1" />
+          <div class="section-block">
+            <div class="section-head">
+              <span>Audio Signal Telemetry</span>
+              <span id="audio-track-label" class="hint-tag">Internal Pulse</span>
+            </div>
+            <div class="meter-grid">
+              <div class="meter-item">
+                <span>Energy</span>
+                <div class="mini-bar"><i id="meter-energy"></i></div>
+              </div>
+              <div class="meter-item">
+                <span>Bass / Mid / High</span>
+                <div class="tri-bars">
+                  <i id="meter-bass"></i>
+                  <i id="meter-mids"></i>
+                  <i id="meter-highs"></i>
+                </div>
+              </div>
+            </div>
+            <div class="telemetry-kv">
+              <div><span>Tempo:</span> <strong id="tel-tempo">Uncertain / Internal</strong></div>
+              <div><span>Onsets:</span> <strong id="tel-onsets">0.6 /s</strong></div>
+              <div><span>Stereo:</span> <strong id="tel-stereo">Centered</strong></div>
+              <div><span>Section / Mood:</span> <strong id="tel-section">Internal Generative Pulse</strong></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 2: CREATIVE TUNING -->
+        <section class="tab-panel" data-panel="tune">
+          <div class="section-block">
+            <div class="section-head">
+              <span>Visual Expression</span>
+              <button type="button" id="reset-controls-btn" class="text-btn">Reset Defaults</button>
+            </div>
+
+            <div class="slider-list">
+              <div class="slider-row">
+                <div class="slider-label"><span>Intensity</span><output id="val-intensity">1.00</output></div>
+                <input type="range" data-control="intensity" min="0" max="2" step="0.05" value="1" />
+              </div>
+              <div class="slider-row">
+                <div class="slider-label"><span>Novelty &amp; Exploration</span><output id="val-novelty">0.65</output></div>
+                <input type="range" data-control="novelty" min="0" max="1" step="0.05" value="0.65" />
+              </div>
+              <div class="slider-row">
+                <div class="slider-label"><span>Motion Speed</span><output id="val-motion">1.00</output></div>
+                <input type="range" data-control="motion" min="0" max="2" step="0.05" value="1" />
+              </div>
+              <div class="slider-row">
+                <div class="slider-label"><span>Sculptural Detail</span><output id="val-detail">1.00</output></div>
+                <input type="range" data-control="detail" min="0.1" max="1.5" step="0.05" value="1" />
+              </div>
+              <div class="slider-row">
+                <div class="slider-label"><span>Brightness</span><output id="val-brightness">0.90</output></div>
+                <input type="range" data-control="brightness" min="0.2" max="1.5" step="0.05" value="0.9" />
+              </div>
+              <div class="slider-row">
+                <div class="slider-label"><span>Color Range</span><output id="val-colorRange">0.85</output></div>
+                <input type="range" data-control="colorRange" min="0.1" max="1.2" step="0.05" value="0.85" />
+              </div>
+              <div class="slider-row">
+                <div class="slider-label"><span>Visual Density</span><output id="val-density">0.90</output></div>
+                <input type="range" data-control="density" min="0.1" max="1.5" step="0.05" value="0.9" />
+              </div>
+              <div class="slider-row">
+                <div class="slider-label"><span>Audio Reactivity</span><output id="val-reactivity">1.00</output></div>
+                <input type="range" data-control="reactivity" min="0" max="2" step="0.05" value="1" />
+              </div>
+              <div class="slider-row">
+                <div class="slider-label"><span>Internal Pulse Tempo</span><output id="val-pulseSpeed">1.00</output></div>
+                <input type="range" data-control="pulseSpeed" min="0.2" max="2.5" step="0.05" value="1" />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 3: PERSONALIZATION & SAVED SCENES -->
+        <section class="tab-panel" data-panel="personal">
+          <div class="section-block">
+            <div class="section-head">
+              <span>Adaptive Preference Memory</span>
+            </div>
+            <label class="toggle-card">
+              <input type="checkbox" id="consent-toggle" />
+              <div class="toggle-copy">
+                <strong>Remember my preferences locally</strong>
+                <small>
+                  Optional. Stores learned aesthetic weights in browser localStorage only. Never stores audio or personal data.
+                </small>
+              </div>
+            </label>
           </div>
 
-          <div class="control-group">
-            <label>Pulse Speed</label>
-            <input type="range" id="pulse-speed" min="0.1" max="3" step="0.1" value="1" />
+          <div class="section-block">
+            <div class="section-head">
+              <span>Learned Bias Profile (Editable)</span>
+              <button type="button" id="reset-learned-btn" class="text-btn">Reset Profile</button>
+            </div>
+
+            <div class="slider-list compact">
+              <div class="slider-row">
+                <div class="slider-label"><span>Energy Bias (Calm ↔ Kinetic)</span><output id="bias-val-energy">0.00</output></div>
+                <input type="range" data-bias="energy" min="-1" max="1" step="0.05" value="0" />
+              </div>
+              <div class="slider-row">
+                <div class="slider-label"><span>Luminance Bias</span><output id="bias-val-brightness">0.00</output></div>
+                <input type="range" data-bias="brightness" min="-1" max="1" step="0.05" value="0" />
+              </div>
+              <div class="slider-row">
+                <div class="slider-label"><span>Abstraction Bias</span><output id="bias-val-abstraction">0.00</output></div>
+                <input type="range" data-bias="abstraction" min="-1" max="1" step="0.05" value="0" />
+              </div>
+            </div>
+
+            <details class="weights-details">
+              <summary>Edit Aesthetic Family Affinity Weights</summary>
+              <div id="family-weights-list" class="slider-list compact"></div>
+            </details>
           </div>
+
+          <div class="section-block">
+            <div class="section-head">
+              <span>Saved Scenes</span>
+              <span id="saved-count" class="hint-tag">0</span>
+            </div>
+            <div id="saved-scenes-list" class="saved-list"></div>
+          </div>
+        </section>
+
+        <!-- TAB 4: ACCESSIBILITY & PERFORMANCE -->
+        <section class="tab-panel" data-panel="system">
+          <div class="section-block">
+            <div class="section-head">
+              <span>Accessibility &amp; Comfort</span>
+              <span class="hint-tag">C · Calm</span>
+            </div>
+
+            <div class="check-list">
+              <label class="check-row">
+                <input type="checkbox" data-access="calmMode" />
+                <span>Calm Mode (gentle pacing &amp; soft dynamics)</span>
+              </label>
+              <label class="check-row">
+                <input type="checkbox" data-access="reducedMotion" />
+                <span>Reduced Motion (minimal camera &amp; spin movement)</span>
+              </label>
+              <label class="check-row">
+                <input type="checkbox" data-access="reducedFlashes" />
+                <span>Reduced Flashes (strictly clamp beat luminance spikes)</span>
+              </label>
+              <label class="check-row">
+                <input type="checkbox" data-access="lowerBrightness" />
+                <span>Lower Brightness Ceiling (dark-room comfort)</span>
+              </label>
+              <label class="check-row">
+                <input type="checkbox" data-access="colorBlindSafe" />
+                <span>Color-Vision-Friendly Palettes Only (Cividis/Okabe/Viridis)</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="section-block">
+            <div class="section-head">
+              <span>Performance Optimization</span>
+            </div>
+            <div class="seg-row" id="quality-seg">
+              <button type="button" class="seg-btn active" data-quality="auto">Auto</button>
+              <button type="button" class="seg-btn" data-quality="low">Eco</button>
+              <button type="button" class="seg-btn" data-quality="medium">Balanced</button>
+              <button type="button" class="seg-btn" data-quality="high">High</button>
+              <button type="button" class="seg-btn" data-quality="ultra">Ultra</button>
+            </div>
+
+            <div class="telemetry-kv perf-kv">
+              <div><span>Frame Rate / Latency:</span> <strong id="perf-fps-detail">60 FPS · 16.6 ms</strong></div>
+              <div><span>Active Quality:</span> <strong id="perf-tier-detail">Auto (High)</strong></div>
+              <div><span>Particles / DPR:</span> <strong id="perf-particles-detail">6,800 · 1.5x</strong></div>
+              <div><span>Memory / Power:</span> <strong id="perf-mem-detail">Nominal</strong></div>
+              <div><span>Hardware:</span> <strong id="perf-gpu-detail">WebGL</strong></div>
+            </div>
+          </div>
+
+          <div class="section-block">
+            <div class="section-head"><span>Keyboard Shortcuts</span></div>
+            <div class="hotkeys-grid">
+              <span><kbd>H</kbd> Hide / Show UI</span>
+              <span><kbd>D</kbd> Studio Drawer</span>
+              <span><kbd>L</kbd> Like Scene</span>
+              <span><kbd>N</kbd> Skip Scene</span>
+              <span><kbd>B</kbd> Save Snapshot</span>
+              <span><kbd>C</kbd> Calm Mode</span>
+              <span><kbd>M</kbd> Microphone</span>
+              <span><kbd>↑</kbd><kbd>↓</kbd> Intensity</span>
+            </div>
+          </div>
+        </section>
+      </aside>
+
+      <!-- Bottom Quick-Steering & Audio Dock -->
+      <footer class="bottom-dock">
+        <!-- Audio Input Selector -->
+        <div class="dock-cluster audio-cluster" role="group" aria-label="Audio Source">
+          <button type="button" class="dock-btn active" data-audio="off" title="Self-Generating Internal Pulse (S)">
+            Self
+          </button>
+          <button type="button" class="dock-btn" data-audio="mic" title="Live Microphone Input (M)">
+            Mic
+          </button>
+          <button type="button" class="dock-btn" data-audio="file" title="Load Local Audio Track (F)">
+            File
+          </button>
+          <button type="button" class="dock-btn" data-audio="synth" title="Built-in Ambient Audio Synth">
+            Synth
+          </button>
         </div>
 
-        <div class="hint">
-          Audio maps to visuals:<br />
-          <span class="hint-line">Bass → slow volumetric breathing &amp; ground ripple</span><br />
-          <span class="hint-line">Mids → particle swarms &amp; color shifts</span><br />
-          <span class="hint-line">Highs → sparkle blooms &amp; edge wisps</span><br />
-          <span class="hint-line">Onset → flash-morphs &amp; radial expansion</span>
+        <span class="dock-divider"></span>
+
+        <!-- Explicit Steering Controls -->
+        <div class="dock-cluster steer-cluster" role="group" aria-label="Experience Steering">
+          <button type="button" class="steer-btn" data-steer="like" title="More like this (L)">♥ Like</button>
+          <button type="button" class="steer-btn" data-steer="skip" title="Skip to fresh motif (N)">⏭ Skip</button>
+          <button type="button" class="steer-btn" data-steer="save" title="Save scene snapshot (B)">★ Save</button>
+          <button type="button" class="steer-btn subtle" data-steer="calmer">Calmer</button>
+          <button type="button" class="steer-btn subtle" data-steer="brighter">Brighter</button>
+          <button type="button" class="steer-btn subtle" data-steer="moreAbstract">Abstract+</button>
+          <button type="button" class="steer-btn subtle" data-steer="moreEnergetic">Energy+</button>
         </div>
 
-        <div class="footer">
-          <div class="status" id="status">No audio — internal pulse engine active</div>
+        <span class="dock-divider"></span>
+
+        <!-- Immediate Visual Intensity Control -->
+        <div class="dock-cluster intensity-cluster">
+          <label for="quick-intensity">Intensity</label>
+          <input
+            type="range"
+            id="quick-intensity"
+            min="0"
+            max="2"
+            step="0.05"
+            value="1"
+            aria-label="Immediate Visual Intensity"
+          />
         </div>
-      </div>
+      </footer>
     </div>
 
     <script type="module" src="src/main.js"></script>
