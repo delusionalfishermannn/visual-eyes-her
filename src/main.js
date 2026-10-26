@@ -1,154 +1,106 @@
-import * as THREE from 'three';
+/**
+ * visual-eyes-her — Application Entry
+ *
+ * Connects:
+ *  1. Adaptive Experience Engine & Automatic Scene Composer (ExperienceDirector)
+ *  2. Conservative Multi-Band Audio & Stereo Analyzer + Self-Generating Pulse (AudioAnalyzer)
+ *  3. Respectful Local Personalization & Accessibility Store (PreferencesManager)
+ *  4. Automatic Performance Optimizer (PerformanceOptimizer)
+ *  5. 10-Family Sculptural 3D Renderer (VisualScene)
+ *  6. Sleek Studio HUD & Hotkeys (UIController)
+ */
+
 import { AudioAnalyzer } from './audio.js';
-import { buildScene, updateScene } from './scene.js';
-import { initUI } from './ui.js';
+import { PreferencesManager } from './preferences.js';
+import { PerformanceOptimizer } from './performance.js';
+import { ExperienceDirector } from './director.js';
+import { VisualScene } from './scene.js';
+import { UIController } from './ui.js';
 
 const canvas = document.getElementById('glcanvas');
 
-// Build the dream scene
-const sceneObj = buildScene(canvas);
-
-// Audio analyzer + UI
+const prefs = new PreferencesManager();
+const visualScene = new VisualScene(canvas);
+const perf = new PerformanceOptimizer(visualScene.glContext);
+const director = new ExperienceDirector(prefs);
 const audio = new AudioAnalyzer();
-const ui = initUI((mode) => {
-  ui.setStatus(mode === 'off' ? 'No audio — internal pulse engine active' : 'Initializing audio…');
-});
 
-// Resize handler
-function onResize() {
-  const w = canvas.clientWidth;
-  const h = canvas.clientHeight;
-  sceneObj.camera.aspect = w / h;
-  sceneObj.camera.updateProjectionMatrix();
-  sceneObj.renderer.setSize(w, h, false);
-  if (sceneObj.composer) {
-    sceneObj.composer.setSize(w, h);
-  }
-}
-window.addEventListener('resize', onResize);
-onResize();
-
-// ---------------------------------------------------------------
-// Self-generating internal pulse engine (audio-off mode)
-// Produces randomized-but-constrained tempo nodes, phase-shifted
-// loops that never exactly repeat, and organic tempo drift.
-const pulseEngine = {
-  phase: 0,
-  tempo: 0.85, // cycles per second
-  nextBeat: 0,
-  textureDrift: 0,
-
-  update(dt) {
-    // Advance phase
-    this.phase += dt * this.tempo;
-
-    let onset = 0;
-    if (this.phase >= this.nextBeat) {
-      onset = 1;
-      this.nextBeat += 1 / this.tempo;
-      // Organic tempo drift (constrained)
-      this.tempo += (Math.random() - 0.5) * 0.06;
-      this.tempo = Math.min(Math.max(this.tempo, 0.5), 1.5);
-      // Occasionally nudge the next beat for gentle unpredictability
-      if (Math.random() < 0.2) {
-        this.nextBeat += (Math.random() - 0.5) * 0.4;
-      }
+const ui = new UIController({
+  prefs,
+  director,
+  perf,
+  async onAudioSelect(mode, file) {
+    if (mode === 'off') {
+      audio.stop();
+      ui.setAudioButtonState('off');
+      ui.showToast('Self-Generating internal pulse active');
+      return;
     }
 
-    // Slow macro swells + micro texture variations
-    const macro = Math.sin(this.phase * Math.PI * 2) * 0.5 + 0.5;
-    const micro = Math.sin(this.phase * Math.PI * 7 + this.textureDrift) * 0.5 + 0.5;
-    this.textureDrift += dt * 0.4;
+    // Toggle off if clicking active Mic or Synth again
+    if ((mode === 'mic' || mode === 'synth') && audio.mode === mode) {
+      audio.stop();
+      ui.setAudioButtonState('off');
+      ui.showToast('Audio stopped · Using internal pulse');
+      return;
+    }
 
-    // Feature outputs (0..1)
-    const bass = 0.28 + 0.42 * macro;
-    const mids = 0.2 + 0.35 * micro + 0.15 * Math.sin(this.phase * Math.PI * 3);
-    const highs = 0.1 + 0.3 * Math.sin(this.phase * Math.PI * 5 + 1);
-    const centroid = 0.4 + 0.3 * Math.sin(this.phase * 0.7);
+    const ok = await audio.init(mode, file);
+    if (!ok) {
+      ui.setAudioButtonState('off');
+      ui.showToast('Audio unavailable or denied — falling back gracefully');
+      return;
+    }
 
-    return { bass, mids, highs, centroid, onset, macro };
+    ui.setAudioButtonState(mode);
+    if (mode === 'mic') ui.showToast('Live Microphone connected');
+    else if (mode === 'file') ui.showToast(`Playing: ${audio.fileName}`);
+    else if (mode === 'synth') ui.showToast('Generative Ambient Synth active');
   },
-};
-
-// ---------------------------------------------------------------
-// Audio mode wiring
-async function startAudioMode(mode, file) {
-  ui.setStatus(mode === 'off' ? 'No audio — internal pulse engine active' : 'Initializing audio…');
-  const ok = await audio.init(mode, file);
-  if (!ok) {
-    ui.setStatus('Web Audio unavailable — using internal pulse');
-    ui.mode = 'off';
-    return;
-  }
-  if (mode === 'mic') {
-    ui.setStatus('Microphone live — bass/mids/highs driving visuals');
-  } else if (mode === 'file') {
-    ui.setStatus('Audio file playing — spectral bands mapped to layers');
-  }
-}
-
-function stopAudio() {
-  audio.stop();
-  ui.mode = 'off';
-  ui.setStatus('No audio — internal pulse engine active');
-}
-
-// Microphone toggle
-ui.micToggle.addEventListener('click', async () => {
-  const nowActive = ui.micToggle.classList.toggle('active');
-  ui.micToggle.textContent = nowActive ? 'Stop Microphone' : 'Start Microphone';
-  if (nowActive) {
-    await startAudioMode('mic');
-  } else {
-    stopAudio();
-  }
 });
 
-// Audio file input
-ui.fileInput.addEventListener('change', (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  ui.mode = 'file';
-  startAudioMode('file', file);
-});
+function handleResize() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  visualScene.resize(w, h, perf.budget.pixelRatio);
+}
+window.addEventListener('resize', handleResize);
+handleResize();
 
-// ---------------------------------------------------------------
-// Render loop
-let lastTime = performance.now() / 1000;
+// Main continuous animation loop
+let lastFrameMs = performance.now();
 
-function frame() {
-  const now = performance.now() / 1000;
-  const dt = Math.min(now - lastTime, 0.05);
-  lastTime = now;
-  const time = now;
+function animate(nowMs) {
+  const rawDeltaMs = Math.max(0.5, nowMs - lastFrameMs);
+  lastFrameMs = nowMs;
+  const dt = Math.min(rawDeltaMs / 1000, 0.05);
 
-  const intensity = ui.intensity;
-  const pulseSpeed = ui.pulseSpeed;
-  const mode = ui.mode;
-
-  let audioFeatures;
-  let pulse = 1.0;
-
-  if (mode === 'off') {
-    // Self-generating hypnotic cascade
-    const gen = pulseEngine.update(dt * pulseSpeed);
-    audioFeatures = gen;
-    // Map internal beat to pulse
-    pulse = 0.6 + 0.9 * gen.onset + 0.4 * gen.macro;
-  } else {
-    audioFeatures = audio.update();
-    const { bass, mids, highs, onset } = audioFeatures;
-    // Combine bands into a single pulse drive
-    pulse = 0.5 + bass * 1.2 + mids * 0.6 + highs * 0.5 + onset * 1.5;
-    pulse = Math.min(Math.max(pulse, 0), 2);
+  // 1. Performance monitoring & adaptive budget update
+  const perfStatus = perf.update(rawDeltaMs);
+  const newDpr = perf.consumePixelRatioChange();
+  if (newDpr !== null) {
+    visualScene.setPixelRatio(newDpr);
   }
 
-  // Clamp pulse by intensity slider
-  pulse *= intensity;
+  // 2. Continuous audio / internal pulse analysis
+  const audioSnap = audio.update(dt, prefs.controls.pulseSpeed);
 
-  updateScene(sceneObj, time, audioFeatures, pulse);
+  // 3. Adaptive Experience Director & Automatic Scene Composition
+  const directorState = director.update(dt, audioSnap);
 
-  requestAnimationFrame(frame);
+  // 4. Render 3D scene
+  visualScene.update(dt, audioSnap, directorState, prefs, perfStatus);
+
+  // 5. Throttled HUD telemetry update
+  ui.updateTelemetry(
+    nowMs,
+    audioSnap,
+    directorState,
+    perfStatus,
+    visualScene.activeParticleCount
+  );
+
+  requestAnimationFrame(animate);
 }
 
-requestAnimationFrame(frame);
+requestAnimationFrame(animate);

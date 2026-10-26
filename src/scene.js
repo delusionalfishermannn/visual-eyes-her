@@ -1,403 +1,419 @@
 /**
- * visual-eyes-her — scene
- * Builds the Three.js dream scene and drives per-frame updates.
+ * visual-eyes-her — Master 3D Scene Renderer
  *
- * Objects:
- *  - Fractal architecture (recursive breathing lattice)
- *  - Liquid light river (flowing noise ribbon)
- *  - Chromatic tessellations (floating polyhedra)
- *  - Particle swarm (responsive sparkles)
- *
- * Audio drives: bass->breathing/ripple, mids->particles/color,
- * highs->bloom/sparkle, onset->flash morphs.
+ * Integrates:
+ *  - Atmospheric Nebula Dome (luminous non-black depth)
+ *  - 10-Family MotifStage (clear focal centerpiece + subtle harmonic secondary blend)
+ *  - Adaptive Multi-Behavior Particle Field (zero-GC dynamic drawRange + fade)
+ *  - 6 Smooth Camera Motion Styles + Stereo Pan Coupling
+ *  - Anti-Flash / Photosensitivity Envelope & Adaptive Quality Scaling
  */
 
 import * as THREE from 'three';
-import { meshVert, meshFrag, ribbonVert, ribbonFrag, particleVert, particleFrag } from './shaders.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { backdropVert, backdropFrag, particleVert, particleFrag } from './shaders.js';
+import { MotifStage } from './motifs.js';
+import { PaletteBlender } from './palettes.js';
 
-const PALETTE = [
-  new THREE.Color(0x0a0a2e), // deep indigo
-  new THREE.Color(0x8a2be2), // electric violet
-  new THREE.Color(0xffd700), // molten gold
-  new THREE.Color(0x00ffff), // cyan plasma
-  new THREE.Color(0xf4c2c2), // rose-quartz pastel
-];
+const MAX_PARTICLES = 12000;
 
-function paletteLerp(t) {
-  t = ((t % 1) + 1) % 1;
-  const i = t * (PALETTE.length - 1);
-  const a = Math.floor(i);
-  const b = Math.min(a + 1, PALETTE.length - 1);
-  const f = i - a;
-  return new THREE.Color().lerpColors(PALETTE[a], PALETTE[b], f);
+const BEHAVIOR_INDEX = {
+  orbital: 0,
+  vortex: 1,
+  updraft: 2,
+  curl: 3,
+  radial: 4,
+  dust: 5,
+};
+
+function clamp(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v));
 }
 
-// ------------------------------------------------------------------
-// Fractal architecture: recursive breathing lattice
-class FractalArchitecture {
-  constructor() {
-    this.group = new THREE.Group();
-    this.meshes = [];
-    this._build(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 1, 0), 2.2, 6);
-  }
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
 
-  _build(pos, dir, length, depth) {
-    if (depth <= 0 || length < 0.12) return;
-    const geo = new THREE.BoxGeometry(0.14, length, 0.14);
-    const mat = this._material();
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.copy(pos);
-    // orient box along dir
-    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
-    mesh.userData = { baseLength: length, seed: Math.random(), dir: dir.clone(), depth };
-    this.group.add(mesh);
-    this.meshes.push(mesh);
+class AdaptiveParticleField {
+  constructor(maxCount = MAX_PARTICLES) {
+    this.maxCount = maxCount;
+    const positions = new Float32Array(maxCount * 3);
+    const randoms = new Float32Array(maxCount * 3);
+    const indexNorm = new Float32Array(maxCount);
 
-    const nextLen = length * 0.62;
-    const branches = depth > 3 ? 3 : 2;
-    for (let k = 0; k < branches; k++) {
-      const angle = (k / branches) * Math.PI * 2 + depth * 0.7;
-      const axis = new THREE.Vector3(Math.sin(angle), 0.3, Math.cos(angle)).normalize();
-      const newDir = dir.clone().applyAxisAngle(axis, 0.55 + Math.random() * 0.6);
-      const newPos = pos.clone().add(dir.clone().multiplyScalar(length * 0.55));
-      this._build(newPos, newDir, nextLen, depth - 1);
+    for (let i = 0; i < maxCount; i++) {
+      // Distribute in a hollow spherical-toroidal cloud around the focal stage (r = 3.2..24)
+      const u = Math.random();
+      const r = 3.2 + Math.pow(u, 0.78) * 21.0;
+      const theta = Math.random() * Math.PI * 2;
+      const cosPhi = (Math.random() * 2 - 1) * 0.88;
+      const sinPhi = Math.sqrt(Math.max(0, 1 - cosPhi * cosPhi));
+
+      positions[i * 3] = r * sinPhi * Math.cos(theta);
+      positions[i * 3 + 1] = r * cosPhi * 0.72;
+      positions[i * 3 + 2] = r * sinPhi * Math.sin(theta);
+
+      randoms[i * 3] = Math.random();                  // seed
+      randoms[i * 3 + 1] = 0.55 + Math.random() * 1.3; // sizeScale
+      randoms[i * 3 + 2] = Math.random();              // colorMix
+
+      indexNorm[i] = i / maxCount;
     }
-  }
 
-  _material() {
-    return new THREE.ShaderMaterial({
-      vertexShader: meshVert,
-      fragmentShader: meshFrag,
-      uniforms: {
-        uTime: { value: 0 },
-        uBass: { value: 0 },
-        uMids: { value: 0 },
-        uHighs: { value: 0 },
-        uPulse: { value: 0 },
-        uColorA: { value: new THREE.Color(0x0a0a2e) },
-        uColorB: { value: new THREE.Color(0x8a2be2) },
-      },
-      transparent: true,
-      side: THREE.DoubleSide,
-    });
-  }
-
-  update(time, audio, pulse) {
-    const { bass, mids, highs, onset } = audio;
-    // flash morph on onset: brighten + pulse
-    const flash = onset > 0.5 ? 1.2 : 1.0;
-    this.group.rotation.y = Math.sin(time * 0.12) * 0.15;
-    this.group.rotation.x = Math.cos(time * 0.09) * 0.08;
-    this.group.position.y = Math.sin(time * 0.25) * 0.15;
-
-    this.meshes.forEach((m) => {
-      const s = 1.0 + bass * 0.9 * flash + Math.sin(time * 1.5 + m.userData.seed) * 0.12 * pulse;
-      m.scale.set(s, s, s);
-      m.material.uniforms.uTime.value = time;
-      m.material.uniforms.uBass.value = bass;
-      m.material.uniforms.uMids.value = mids;
-      m.material.uniforms.uHighs.value = highs;
-      m.material.uniforms.uPulse.value = pulse * flash;
-    });
-  }
-
-  setColors(colorA, colorB) {
-    this.meshes.forEach((m) => {
-      m.material.uniforms.uColorA.value.copy(colorA);
-      m.material.uniforms.uColorB.value.copy(colorB);
-    });
-  }
-}
-
-// ------------------------------------------------------------------
-// Liquid light river: flowing noise ribbon
-class LiquidRiver {
-  constructor() {
-    const widthSeg = 12;
-    const lengthSeg = 120;
-    const geo = new THREE.PlaneGeometry(2.4, 30, widthSeg, lengthSeg);
-    geo.rotateX(-Math.PI / 2);
-    // UVs already 0..1 from plane
-    const mat = new THREE.ShaderMaterial({
-      vertexShader: ribbonVert,
-      fragmentShader: ribbonFrag,
-      uniforms: {
-        uTime: { value: 0 },
-        uFlow: { value: 0 },
-        uBass: { value: 0 },
-        uHighs: { value: 0 },
-        uColorA: { value: new THREE.Color(0x00ffff) },
-        uColorB: { value: new THREE.Color(0x8a2be2) },
-      },
-      transparent: true,
-      side: THREE.DoubleSide,
-    });
-    this.mesh = new THREE.Mesh(geo, mat);
-    this.mesh.position.set(0, 0.4, 0);
-    this.mesh.rotation.x = -Math.PI / 2;
-    this.group = new THREE.Group();
-    this.group.add(this.mesh);
-    // second ribbon, offset & counter-rotating for layered depth
-    this.mesh2 = this.mesh.clone();
-    this.mesh2.position.set(1.2, 0.2, -4);
-    this.mesh2.rotation.z = Math.PI / 4;
-    this.mesh2.material = this.mesh.material.clone();
-    this.group.add(this.mesh2);
-  }
-
-  update(time, audio) {
-    const { bass, highs } = audio;
-    const flow = 1.0 + bass * 0.8 + highs * 0.6;
-    this.group.position.y = Math.sin(time * 0.17) * 0.12;
-    this.group.rotation.z = Math.sin(time * 0.11) * 0.06;
-    [this.mesh, this.mesh2].forEach((m) => {
-      m.material.uniforms.uTime.value = time;
-      m.material.uniforms.uFlow.value = flow;
-      m.material.uniforms.uBass.value = bass;
-      m.material.uniforms.uHighs.value = highs;
-    });
-  }
-
-  setColors(colorA, colorB) {
-    [this.mesh, this.mesh2].forEach((m) => {
-      m.material.uniforms.uColorA.value.copy(colorA);
-      m.material.uniforms.uColorB.value.copy(colorB);
-    });
-  }
-}
-
-// ------------------------------------------------------------------
-// Chromatic tessellations: floating polyhedra
-class Tessellations {
-  constructor() {
-    this.group = new THREE.Group();
-    const types = [
-      { geo: new THREE.IcosahedronGeometry(0.7, 0), rotSpeed: 0.0004 },
-      { geo: new THREE.TetrahedronGeometry(0.9, 0), rotSpeed: 0.0006 },
-      { geo: new THREE.OctahedronGeometry(0.6, 0), rotSpeed: 0.0005 },
-    ];
-    types.forEach((t, i) => {
-      const mat = new THREE.ShaderMaterial({
-        vertexShader: meshVert,
-        fragmentShader: meshFrag,
-        uniforms: {
-          uTime: { value: 0 },
-          uBass: { value: 0 },
-          uMids: { value: 0 },
-          uHighs: { value: 0 },
-          uPulse: { value: 0 },
-          uColorA: { value: new THREE.Color(0xffd700) },
-          uColorB: { value: new THREE.Color(0x00ffff) },
-        },
-        transparent: true,
-        side: THREE.DoubleSide,
-      });
-      const mesh = new THREE.Mesh(t.geo, mat);
-      mesh.userData = {
-        rotSpeed: t.rotSpeed,
-        orbit: 3.2 + i * 2.2,
-        angle: i * (Math.PI * 2 / 3),
-        baseY: 1.5 + i * 1.2,
-        seed: Math.random(),
-      };
-      mesh.position.set(
-        Math.cos(mesh.userData.angle) * mesh.userData.orbit,
-        mesh.userData.baseY,
-        Math.sin(mesh.userData.angle) * mesh.userData.orbit
-      );
-      this.group.add(mesh);
-      this.group.userData.meshes = this.group.userData.meshes || [];
-      this.group.userData.meshes.push(mesh);
-    });
-  }
-
-  update(time, audio, pulse) {
-    const { bass, mids, highs, onset } = audio;
-    const flash = onset > 0.5 ? 1.4 : 1.0;
-    const meshes = this.group.userData.meshes || [];
-    meshes.forEach((m, i) => {
-      m.rotation.x += m.userData.rotSpeed * (1 + mids);
-      m.rotation.y += m.userData.rotSpeed * 1.4 * (1 + mids);
-      m.userData.angle += 0.008 * (1 + bass * 0.5);
-      m.position.x = Math.cos(m.userData.angle) * m.userData.orbit;
-      m.position.z = Math.sin(m.userData.angle) * m.userData.orbit;
-      m.position.y = m.userData.baseY + Math.sin(time * 1.2 + i) * (0.25 + mids * 0.5);
-      const s = 1.0 + bass * 0.7 * flash + Math.sin(time * 2 + i) * 0.1 * pulse;
-      m.scale.set(s, s, s);
-      m.material.uniforms.uTime.value = time;
-      m.material.uniforms.uBass.value = bass;
-      m.material.uniforms.uMids.value = mids;
-      m.material.uniforms.uHighs.value = highs;
-      m.material.uniforms.uPulse.value = pulse * flash;
-    });
-  }
-
-  setColors(colorA, colorB) {
-    const meshes = this.group.userData.meshes || [];
-    meshes.forEach((m) => {
-      m.material.uniforms.uColorA.value.copy(colorA);
-      m.material.uniforms.uColorB.value.copy(colorB);
-    });
-  }
-}
-
-// ------------------------------------------------------------------
-// Particle swarm
-class ParticleSwarm {
-  constructor(count = 3500) {
-    this.count = count;
-    const positions = new Float32Array(count * 3);
-    const offsets = new Float32Array(count * 3);
-    const colors = new Float32Array(count * 3);
-    const sizes = new Float32Array(count);
-    const seeds = new Float32Array(count);
-    for (let i = 0; i < count; i++) {
-      const r = 6 + Math.random() * 26;
-      const phi = Math.random() * Math.PI * 2;
-      const costheta = 2 * Math.random() - 1;
-      const z = costheta;
-      const xy = Math.sqrt(1 - z * z);
-      positions[3 * i] = xy * Math.cos(phi) * r;
-      positions[3 * i + 1] = z * r + (Math.random() - 0.5) * 4;
-      positions[3 * i + 2] = xy * Math.sin(phi) * r;
-      offsets[3 * i] = Math.random() * 2 - 1;
-      offsets[3 * i + 1] = Math.random() * 2 - 1;
-      offsets[3 * i + 2] = Math.random() * 2 - 1;
-      const c = paletteLerp(Math.random());
-      colors[3 * i] = c.r; colors[3 * i + 1] = c.g; colors[3 * i + 2] = c.b;
-      sizes[i] = 0.08 + Math.random() * 0.18;
-      seeds[i] = Math.random();
-    }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geo.setAttribute('aOffset', new THREE.BufferAttribute(offsets, 3));
-    geo.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
-    geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
-    geo.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
-    const mat = new THREE.ShaderMaterial({
+    geo.setAttribute('aRandom', new THREE.BufferAttribute(randoms, 3));
+    geo.setAttribute('aIndexNorm', new THREE.BufferAttribute(indexNorm, 1));
+
+    this.material = new THREE.ShaderMaterial({
       vertexShader: particleVert,
       fragmentShader: particleFrag,
       uniforms: {
         uTime: { value: 0 },
+        uBass: { value: 0 },
         uMids: { value: 0 },
         uHighs: { value: 0 },
-        uPulse: { value: 0 },
+        uOnset: { value: 0 },
+        uPixelRatio: { value: 1.0 },
+        uBehavior: { value: 0 },
+        uActiveRatio: { value: 0.7 },
+        uMotionScale: { value: 1.0 },
+        uStereoPan: { value: 0.0 },
+        uPrimary: { value: new THREE.Color(0x9d4edd) },
+        uSecondary: { value: new THREE.Color(0x00f5d4) },
+        uAccent: { value: new THREE.Color(0xffd166) },
+        uHighlight: { value: new THREE.Color(0xffffff) },
       },
       transparent: true,
+      depthWrite: false,
       blending: THREE.AdditiveBlending,
+    });
+
+    this.points = new THREE.Points(geo, this.material);
+    this.activeCount = Math.floor(maxCount * 0.65);
+    geo.setDrawRange(0, this.activeCount);
+  }
+
+  update({ time, audio, colors, behaviorId, activeRatio, motionScale, pixelRatio }) {
+    const ratio = clamp(activeRatio, 0.04, 1.0);
+    // Keep drawRange slightly above uActiveRatio so shader's smoothstep fade tail renders cleanly
+    const drawCount = Math.min(this.maxCount, Math.ceil(this.maxCount * Math.min(1, ratio + 0.08)));
+    this.activeCount = Math.round(this.maxCount * ratio);
+    this.points.geometry.setDrawRange(0, drawCount);
+
+    const u = this.material.uniforms;
+    u.uTime.value = time;
+    u.uBass.value = audio.bass;
+    u.uMids.value = audio.mids;
+    u.uHighs.value = audio.highs;
+    u.uOnset.value = audio.onset;
+    u.uPixelRatio.value = pixelRatio;
+    u.uBehavior.value = BEHAVIOR_INDEX[behaviorId] ?? 0;
+    u.uActiveRatio.value = ratio;
+    u.uMotionScale.value = motionScale;
+    u.uStereoPan.value = audio.stereoPan || 0;
+    u.uPrimary.value.copy(colors.primary);
+    u.uSecondary.value.copy(colors.secondary);
+    u.uAccent.value.copy(colors.accent);
+    u.uHighlight.value.copy(colors.highlight);
+  }
+}
+
+export class VisualScene {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.scene = new THREE.Scene();
+    this.fogColor = new THREE.Color(0x12082b);
+    this.scene.fog = new THREE.FogExp2(this.fogColor, 0.022);
+
+    const w = Math.max(1, canvas.clientWidth || window.innerWidth);
+    const h = Math.max(1, canvas.clientHeight || window.innerHeight);
+
+    this.camera = new THREE.PerspectiveCamera(56, w / h, 0.1, 240);
+    this.camera.position.set(0, 1.6, 9.2);
+    this._camTargetPos = new THREE.Vector3(0, 1.6, 9.2);
+    this._camLookAt = new THREE.Vector3(0, 0, 0);
+    this._motionAngle = 0;
+
+    this.renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: false,
+      powerPreference: 'high-performance',
+    });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.65));
+    this.renderer.setSize(w, h, false);
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.setClearColor(0x100726, 1);
+
+    // Post-processing Bloom Composer
+    this.composer = null;
+    this.bloomPass = null;
+    try {
+      this.composer = new EffectComposer(this.renderer);
+      this.composer.addPass(new RenderPass(this.scene, this.camera));
+      this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.95, 0.65, 0.28);
+      this.composer.addPass(this.bloomPass);
+    } catch (err) {
+      console.warn('Bloom fallback to direct WebGLRenderer:', err);
+      this.composer = null;
+    }
+
+    // 1. Atmospheric Sky-Sphere Backdrop
+    this.backdropMaterial = new THREE.ShaderMaterial({
+      vertexShader: backdropVert,
+      fragmentShader: backdropFrag,
+      uniforms: {
+        uTime: { value: 0 },
+        uBass: { value: 0 },
+        uMids: { value: 0 },
+        uHighs: { value: 0 },
+        uBrightness: { value: 0.9 },
+        uQuality: { value: 0.85 },
+        uStereoPan: { value: 0 },
+        uBgDeep: { value: new THREE.Color(0x12082b) },
+        uBgMid: { value: new THREE.Color(0x2a1259) },
+        uPrimary: { value: new THREE.Color(0x9d4edd) },
+        uSecondary: { value: new THREE.Color(0x00f5d4) },
+        uAccent: { value: new THREE.Color(0xffd166) },
+      },
+      side: THREE.BackSide,
       depthWrite: false,
     });
-    this.mesh = new THREE.Points(geo, mat);
-    this.group = new THREE.Group();
-    this.group.add(this.mesh);
+    this.backdropMesh = new THREE.Mesh(new THREE.SphereGeometry(115, 42, 28), this.backdropMaterial);
+    this.backdropMesh.renderOrder = -10;
+    this.scene.add(this.backdropMesh);
+
+    // 2. Motif Stage (all 10 families)
+    this.motifStage = new MotifStage();
+    this.scene.add(this.motifStage.root);
+
+    // 3. Supporting Adaptive Particle Field
+    this.particleField = new AdaptiveParticleField(MAX_PARTICLES);
+    this.scene.add(this.particleField.points);
+
+    // 4. Palette Blender
+    this.paletteBlender = new PaletteBlender('cosmic-transcendence');
+
+    // Anti-flash smoothed envelopes
+    this._safeOnset = 0;
+    this._safeBloom = 0.85;
+    this._safeExposure = 1.1;
+    this._animTime = 0;
   }
 
-  update(time, audio, pulse) {
-    const { mids, highs } = audio;
-    this.group.rotation.y = Math.sin(time * 0.06) * 0.12;
-    this.group.rotation.x = Math.cos(time * 0.04) * 0.08;
-    this.mesh.material.uniforms.uTime.value = time;
-    this.mesh.material.uniforms.uMids.value = mids;
-    this.mesh.material.uniforms.uHighs.value = highs;
-    this.mesh.material.uniforms.uPulse.value = pulse;
+  get glContext() {
+    return this.renderer.getContext();
   }
-}
 
-// ------------------------------------------------------------------
-export function buildScene(canvas) {
-  const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x020206, 0.017);
+  get activeParticleCount() {
+    return this.particleField.activeCount;
+  }
 
-  const camera = new THREE.PerspectiveCamera(55, canvas.clientWidth / canvas.clientHeight, 0.1, 120);
-  camera.position.set(0, 2.5, 9);
+  resize(width, height, pixelRatio = null) {
+    const w = Math.max(1, width);
+    const h = Math.max(1, height);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+    if (pixelRatio !== null) {
+      this.renderer.setPixelRatio(pixelRatio);
+    }
+    this.renderer.setSize(w, h, false);
+    if (this.composer) {
+      this.composer.setSize(w, h);
+    }
+  }
 
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-  renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  renderer.toneMapping = THREE.ReinhardToneMapping;
-  renderer.toneMappingExposure = 1.25;
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  setPixelRatio(dpr) {
+    const w = Math.max(1, this.canvas.clientWidth || window.innerWidth);
+    const h = Math.max(1, this.canvas.clientHeight || window.innerHeight);
+    this.renderer.setPixelRatio(dpr);
+    this.renderer.setSize(w, h, false);
+    if (this.composer) {
+      this.composer.setSize(w, h);
+    }
+  }
 
-  // Bloom pass for chromatic glow / volumetric feel
-  let composer = null;
-  try {
-    composer = new EffectComposer(renderer);
-    composer.addPass(new RenderPass(scene, camera));
-    const bloom = new UnrealBloomPass(
-      new THREE.Vector2(canvas.clientWidth, canvas.clientHeight),
-      0.55, // strength
-      0.85, // radius
-      0.6   // threshold
+  update(dt, rawAudio, directorState, prefs, perfStatus) {
+    const effective = prefs.getEffectiveControls();
+    const access = prefs.accessibility;
+    const recipe = directorState.recipe;
+    const arcMultiplier = directorState.arcPhase.arcIntensity || 1.0;
+
+    // Advance internal shader clock smoothly scaled by motion & intensity
+    const timeRate = 0.25 + effective.motion * 0.75;
+    this._animTime += dt * timeRate;
+    const t = this._animTime;
+
+    // Apply Audio Reactivity & Intensity scaling + Photosensitivity Anti-Flash Limiter
+    const react = effective.reactivity * effective.intensity * arcMultiplier;
+    const maxOnsetCap = access.reducedFlashes || access.calmMode ? 0.14 : 0.85;
+    const rawScaledOnset = Math.min(maxOnsetCap, rawAudio.onset * react * 0.85);
+
+    // Rate-limit onset rise & decay so rapid strobing (>3Hz high-contrast flash) cannot happen
+    const maxRise = (access.reducedFlashes ? 0.9 : 3.2) * dt;
+    if (rawScaledOnset > this._safeOnset) {
+      this._safeOnset = Math.min(rawScaledOnset, this._safeOnset + maxRise);
+    } else {
+      this._safeOnset = lerp(this._safeOnset, rawScaledOnset, clamp(dt * 5.0, 0.02, 0.35));
+    }
+
+    const audio = {
+      energy: clamp(rawAudio.energy * react, 0, 1.4),
+      bass: clamp(rawAudio.bass * react, 0, 1.35),
+      mids: clamp(rawAudio.mids * react, 0, 1.35),
+      highs: clamp(rawAudio.highs * react, 0, 1.35),
+      centroid: rawAudio.centroid,
+      onset: this._safeOnset,
+      stereoPan: access.reducedMotion ? 0 : (rawAudio.stereoPan || 0),
+    };
+
+    // Update Palette Blender
+    this.paletteBlender.setTarget(recipe.palette, 5.2);
+    const colors = this.paletteBlender.update(dt, {
+      colorRange: effective.colorRange,
+      brightness: effective.brightness,
+      lowerBrightness: access.lowerBrightness,
+      centroid: audio.centroid,
+    });
+
+    // Update Fog (subtle depth veil swells gently during 'nebula-veil' transitions)
+    this.fogColor.copy(colors.bgDeep).lerp(colors.bgMid, 0.35);
+    this.scene.fog.color.copy(this.fogColor);
+    const veilBoost =
+      recipe.transitionType === 'nebula-veil'
+        ? Math.sin(directorState.transitionProgress * Math.PI) * 0.018
+        : 0;
+    this.scene.fog.density = 0.018 + veilBoost;
+
+    // Update Atmospheric Backdrop Dome
+    const bu = this.backdropMaterial.uniforms;
+    bu.uTime.value = t;
+    bu.uBass.value = audio.bass;
+    bu.uMids.value = audio.mids;
+    bu.uHighs.value = audio.highs;
+    bu.uBrightness.value = effective.brightness;
+    bu.uQuality.value = perfStatus.budget.shaderQuality;
+    bu.uStereoPan.value = audio.stereoPan;
+    bu.uBgDeep.value.copy(colors.bgDeep);
+    bu.uBgMid.value.copy(colors.bgMid);
+    bu.uPrimary.value.copy(colors.primary);
+    bu.uSecondary.value.copy(colors.secondary);
+    bu.uAccent.value.copy(colors.accent);
+    this.backdropMesh.position.copy(this.camera.position);
+
+    // Update Focal & Secondary Motifs
+    this.motifStage.update({
+      time: t,
+      dt,
+      audio,
+      colors,
+      focalId: recipe.family,
+      prevFocalId: recipe.prevFamily,
+      transitionProgress: directorState.transitionProgress,
+      transitionType: recipe.transitionType,
+      secondaryId: recipe.secondaryFamily,
+      secondaryWeight: directorState.secondaryWeight * perfStatus.budget.secondaryDetail,
+      controls: effective,
+      shaderQuality: perfStatus.budget.shaderQuality,
+    });
+
+    // Update Supporting Particle Field
+    const activeRatio = clamp(
+      perfStatus.budget.particleRatio * (0.28 + effective.density * 0.68),
+      0.04,
+      1.0
     );
-    composer.addPass(bloom);
-  } catch (e) {
-    console.warn('Bloom unavailable:', e);
+    this.particleField.update({
+      time: t,
+      audio,
+      colors,
+      behaviorId: recipe.particleBehavior,
+      activeRatio,
+      motionScale: effective.motion,
+      pixelRatio: this.renderer.getPixelRatio(),
+    });
+
+    // Update Camera Choreography (6 Motion Styles, smoothly damped)
+    this._updateCamera(dt, t, recipe.motionStyle, effective, access, audio);
+
+    // Update Post-Processing Bloom & Exposure safely
+    const maxBloom = access.lowerBrightness ? 0.55 : access.reducedFlashes ? 0.78 : 1.35;
+    const desiredBloom = clamp(
+      (0.58 + effective.brightness * 0.35 + audio.highs * 0.22 + audio.onset * 0.28) *
+        (0.75 + effective.intensity * 0.25),
+      0.25,
+      maxBloom
+    );
+    this._safeBloom = lerp(this._safeBloom, desiredBloom, clamp(dt * 3.0, 0.02, 0.2));
+
+    const maxExp = access.lowerBrightness ? 0.85 : 1.38;
+    const desiredExp = clamp(0.78 + effective.brightness * 0.42, 0.5, maxExp);
+    this._safeExposure = lerp(this._safeExposure, desiredExp, clamp(dt * 2.5, 0.02, 0.2));
+    this.renderer.toneMappingExposure = this._safeExposure;
+
+    if (this.composer && this.bloomPass && perfStatus.budget.bloomEnabled) {
+      this.bloomPass.strength = this._safeBloom;
+      this.composer.render();
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 
-  const fractal = new FractalArchitecture();
-  const river = new LiquidRiver();
-  const tess = new Tessellations();
-  const particles = new ParticleSwarm();
+  _updateCamera(dt, time, motionStyle, controls, access, audio) {
+    const mot = access.reducedMotion ? 0.08 : controls.motion;
+    this._motionAngle += dt * 0.16 * mot;
+    const a = this._motionAngle;
 
-  scene.add(fractal.group, river.group, tess.group, particles.group);
+    let x = 0;
+    let y = 1.35;
+    let z = 9.0;
 
-  // ambient + point light for soft global illumination
-  const ambient = new THREE.AmbientLight(0xffffff, 0.25);
-  scene.add(ambient);
-  const pLight = new THREE.PointLight(0xbc8ff0, 2.5, 20);
-  pLight.position.set(0, 3, 4);
-  scene.add(pLight);
+    switch (motionStyle) {
+      case 'orbital-glide':
+        x = Math.sin(a) * 3.6;
+        z = Math.cos(a) * 8.8;
+        y = 1.4 + Math.sin(a * 0.7) * 1.1;
+        break;
+      case 'spiral-ascension':
+        x = Math.sin(a * 1.3) * 3.2;
+        z = Math.cos(a * 1.3) * 8.2;
+        y = 1.8 + Math.sin(time * 0.22) * 2.1;
+        break;
+      case 'pendulum-sway':
+        x = Math.sin(time * 0.28) * 3.8 * Math.min(1.2, mot);
+        y = 1.2 + Math.cos(time * 0.19) * 0.8;
+        z = 8.8 + Math.sin(time * 0.15) * 1.1;
+        break;
+      case 'kinetic-pulse':
+        x = Math.sin(a * 1.6) * 2.8;
+        y = 1.3 + Math.cos(a * 1.2) * 1.3;
+        z = 8.4 - audio.bass * 1.1 - audio.onset * 0.65;
+        break;
+      case 'zero-gravity':
+        x = Math.sin(time * 0.09) * 1.6;
+        y = 1.1 + Math.sin(time * 0.07) * 0.7;
+        z = 9.4 + Math.cos(time * 0.06) * 0.9;
+        break;
+      case 'breathing':
+      default:
+        x = Math.sin(time * 0.12) * 1.4;
+        y = 1.35 + Math.sin(time * 0.18) * 0.55;
+        z = 9.1 - audio.bass * 0.75 + Math.cos(time * 0.15) * 0.85;
+        break;
+    }
 
-  // time-varying color state
-  let colorCycle = 0;
+    // Gentle stereo pan nudge
+    x += audio.stereoPan * 0.65;
 
-  function setColors(colorA, colorB) {
-    fractal.setColors(colorA, colorB);
-    river.setColors(colorA, colorB);
-    tess.setColors(colorA, colorB);
+    this._camTargetPos.set(x, y, z);
+    this.camera.position.lerp(this._camTargetPos, clamp(dt * 1.6, 0.01, 0.15));
+
+    this._camLookAt.set(audio.stereoPan * 0.25, 0.05, 0);
+    this.camera.lookAt(this._camLookAt);
   }
-
-  function update(time, audio, pulse) {
-    // drive color cycle by time + spectral centroid (audio warmth)
-    colorCycle += 0.0012 + audio.centroid * 0.002;
-    const colorA = paletteLerp(colorCycle);
-    const colorB = paletteLerp(colorCycle + 0.6);
-    setColors(colorA, colorB);
-
-    fractal.update(time, audio, pulse);
-    river.update(time, audio);
-    tess.update(time, audio, pulse);
-    particles.update(time, audio, pulse);
-
-    // slow camera drift / breathing
-    camera.position.x = Math.sin(time * 0.07) * 0.6;
-    camera.position.z = 9 + Math.cos(time * 0.05) * 0.8;
-    camera.position.y = 2.5 + Math.sin(time * 0.09) * 0.25;
-    camera.lookAt(0, 0.6, 0);
-  }
-
-  function render(time) {
-    update(time, { bass: 0, mids: 0, highs: 0, centroid: 0.5, onset: 0 }, 0);
-    if (composer) composer.render();
-    else renderer.render(scene, camera);
-  }
-
-  return {
-    scene,
-    camera,
-    renderer,
-    composer,
-    render,
-    update,
-  };
-}
-
-export function updateScene(sceneObj, time, audio, pulse) {
-  sceneObj.update(time, audio, pulse);
-  sceneObj.camera.lookAt(sceneObj.scene.position);
-  if (sceneObj.composer) sceneObj.composer.render();
-  else sceneObj.renderer.render(sceneObj.scene, sceneObj.camera);
 }
